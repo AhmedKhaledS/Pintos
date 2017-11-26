@@ -70,6 +70,10 @@ static void *alloc_frame (struct thread *, size_t size);
 static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
+struct thread* highest_priority_thread (void);
+bool priority_comparator (const struct list_elem *a,
+                             const struct list_elem *b,
+                             void *aux);
 
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
@@ -208,7 +212,8 @@ thread_create (const char *name, int priority,
 
   /* Add to run queue. */
   thread_unblock (t);
-
+  /* After adding new thread we have to reschedule the running thread. */	
+  thread_yield ();
   return tid;
 }
 
@@ -344,6 +349,9 @@ void
 thread_set_priority (int new_priority) 
 {
   thread_current ()->priority = new_priority;
+  int old_level = intr_disable ();
+  thread_yield ();	
+  intr_set_level (old_level);
 }
 
 /* Returns the current thread's priority. */
@@ -496,7 +504,17 @@ next_thread_to_run (void)
   if (list_empty (&ready_list))
     return idle_thread;
   else
-    return list_entry (list_pop_front (&ready_list), struct thread, elem);
+    return highest_priority_thread ();
+}
+
+/* Returns the maximum priority thread in the ready list */
+struct thread* highest_priority_thread ()
+{
+  struct list_elem *max_element = list_max (&ready_list, &priority_comparator, NULL);
+  struct thread* highest_pri_thread = list_entry (max_element,
+                                           struct thread, elem);
+  list_remove (max_element);
+  return highest_pri_thread;
 }
 
 /* Completes a thread switch by activating the new thread's page
@@ -585,3 +603,14 @@ allocate_tid (void)
 /* Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
+
+bool priority_comparator (const struct list_elem *a,
+                             const struct list_elem *b,
+                             void *aux)
+  {
+    struct thread *thread_a, *thread_b;
+    thread_a = list_entry (a, struct thread, elem);
+    thread_b = list_entry (b, struct thread, elem);
+    return (thread_a->priority < thread_b->priority);
+  }
+
