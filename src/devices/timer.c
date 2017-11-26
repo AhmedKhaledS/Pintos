@@ -19,8 +19,6 @@
 #error TIMER_FREQ <= 1000 recommended
 #endif
 
-#define LIMIT 200
-
 /* Number of timer ticks since OS booted. */
 static int64_t ticks;
 
@@ -33,6 +31,9 @@ static bool too_many_loops (unsigned loops);
 static void busy_wait (int64_t loops);
 static void real_time_sleep (int64_t num, int32_t denom);
 static void real_time_delay (int64_t num, int32_t denom);
+bool comparator (const struct list_elem *a,
+                             const struct list_elem *b,
+                             void *aux);
 
 struct list sleeping_threads;
 
@@ -98,15 +99,23 @@ timer_elapsed (int64_t then)
 void
 timer_sleep (int64_t ticks) 
 {
+  if (ticks < 0)
+    return;
   int64_t start = timer_ticks ();
   ASSERT (intr_get_level () == INTR_ON);
-  while (timer_elapsed (start) < ticks)
+  thread_current ()->wakeup_time = start + ticks;
+  list_insert_ordered (&sleeping_threads, &thread_current ()->elem
+                        , &comparator, NULL);
+  enum intr_level old_level = intr_disable ();
+  thread_block ();
+	intr_set_level (old_level);
+  /*while (timer_elapsed (start) < ticks)
     { 
 	list_push_back (&sleeping_threads, &thread_current ()->elem);
         enum intr_level old_level = intr_disable ();
         thread_block ();
 	intr_set_level (old_level);
-    }
+    }*/
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -189,14 +198,31 @@ timer_interrupt (struct intr_frame *args UNUSED)
   unblock_sleeping_threads ();
 }
 
+/* This function unblocks all threads in sleeping list. */
 void
 unblock_sleeping_threads()
 {
+  struct list_elem *current;
+
   while (!list_empty (&sleeping_threads))
+    {
+      int64_t start = timer_ticks ();
+      struct thread *current_extracted = list_entry (list_front (&sleeping_threads),
+                                                       struct thread, elem);
+      if (timer_ticks () >= current_extracted->wakeup_time)
+        {
+          current_extracted = list_entry (list_pop_front (&sleeping_threads),
+                                                       struct thread, elem);
+          thread_unblock (current_extracted);
+        }
+      else
+        break;
+    }
+  /*while (!list_empty (&sleeping_threads))
     {
        thread_unblock (list_entry (list_pop_front (&sleeping_threads),
                                   struct thread, elem));
-    }
+    }*/
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer
@@ -269,3 +295,14 @@ real_time_delay (int64_t num, int32_t denom)
   ASSERT (denom % 1000 == 0);
   busy_wait (loops_per_tick * num / 1000 * TIMER_FREQ / (denom / 1000)); 
 }
+
+bool comparator (const struct list_elem *a,
+                             const struct list_elem *b,
+                             void *aux)
+  {
+    struct thread *thread_a, *thread_b;
+    thread_a = list_entry (a, struct thread, elem);
+    thread_b = list_entry (b, struct thread, elem);
+    return (thread_a->wakeup_time < thread_b->wakeup_time);
+  }
+
