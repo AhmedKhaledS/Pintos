@@ -34,7 +34,7 @@ static void real_time_delay (int64_t num, int32_t denom);
 bool comparator (const struct list_elem *a,
                              const struct list_elem *b,
                              void *aux);
-
+static void unblock_sleeping_threads();
 struct list sleeping_threads;
 
 
@@ -103,11 +103,8 @@ timer_sleep (int64_t ticks)
     return;
   int64_t start = timer_ticks ();
   ASSERT (intr_get_level () == INTR_ON);
-//  thread_current ()->wakeup_time = start + ticks;
-  struct sleeping_thread curr_thread_to_wait = { thread_current (),
-                                                start + ticks, {NULL, NULL} };
-  // list_insert_ordered (&sleeping_threads, &thread_current ()->elem},
-  //                       &comparator, NULL);
+  struct sleeping_thread curr_thread_to_wait = INITIALIZE_S_THREAD(
+          thread_current (), start + ticks);
   list_insert_ordered (&sleeping_threads, &curr_thread_to_wait.elem,
                         &comparator, NULL);
   enum intr_level old_level = intr_disable ();
@@ -202,12 +199,12 @@ unblock_sleeping_threads()
   while (!list_empty (&sleeping_threads))
     {
       int64_t start = timer_ticks ();
-      struct sleeping_thread *current_extracted = list_entry (list_front (&sleeping_threads),
-                                                       struct sleeping_thread, elem);
+      struct sleeping_thread *current_extracted = list_entry (list_front (
+        &sleeping_threads), struct sleeping_thread, elem);
       if (timer_ticks () >= current_extracted->wakeup_time)
         {
-          current_extracted = list_entry (list_pop_front (&sleeping_threads),
-                                                       struct sleeping_thread, elem);
+          current_extracted = list_entry (list_pop_front (
+            &sleeping_threads), struct sleeping_thread, elem);
           thread_unblock (current_extracted->s_thread);
         }
       else
