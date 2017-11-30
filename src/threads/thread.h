@@ -98,12 +98,25 @@ struct thread
     uint32_t *pagedir;                  /* Page directory. */
 #endif
     /* This value indicates the absolute number of ticks. */
-    uint64_t wakeup_time;
+    //uint64_t wakeup_time;
 
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
 
   };
+  /* This structure is responsible for identifing the skeleton of
+     the slept thread by a pre-specified number of ticks.
+  */
+  struct sleeping_thread
+    {
+      /* The thread to sleep. */
+      struct thread *s_thread;
+      /* The required time to make the thread sleep. */
+      uint64_t wakeup_time;
+      /* The list element which is responsible for iterating on the
+         sleeping threads. */
+      struct list_elem elem;
+    };
 
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.
