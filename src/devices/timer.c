@@ -196,7 +196,7 @@ timer_interrupt (struct intr_frame *args UNUSED)
 }
 
 /* This function unblocks all threads in sleeping list. */
-void
+static void
 unblock_sleeping_threads()
 {
   while (!list_empty (&sleeping_threads))
