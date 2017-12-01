@@ -97,16 +97,13 @@ struct thread
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
 #endif
-    /* This value indicates the absolute number of ticks. */
-    //uint64_t wakeup_time;
 
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
-
   };
+
   /* This structure is responsible for identifing the skeleton of
-     the slept thread by a pre-specified number of ticks.
-  */
+     the slept thread by a pre-specified number of ticks. */
   struct sleeping_thread
     {
       /* The thread to sleep. */
