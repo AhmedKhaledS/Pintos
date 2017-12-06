@@ -109,7 +109,7 @@ timer_sleep (int64_t ticks)
                         &comparator, NULL);
   enum intr_level old_level = intr_disable ();
   thread_block ();
-	intr_set_level (old_level);
+  intr_set_level (old_level);
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -188,8 +188,19 @@ timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
   thread_tick ();
-
   unblock_sleeping_threads ();
+  if (!thread_mlfqs)
+    return;
+  increment_recent_cpu ();
+  if (timer_ticks () % TIMER_FREQ == 0)
+  {
+    //printf ("Load average is: %d\n", load_average.real_number);
+    update_load_avg ();
+    update_recent_cpu ();
+// load_avg = (59/60)*load_avg + (1/60)*ready_threads
+  }
+  if (timer_ticks () % 4 == 0)
+    update_priority ();
 }
 
 /* This function unblocks all threads in sleeping list. */

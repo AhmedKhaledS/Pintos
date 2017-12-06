@@ -11,6 +11,7 @@
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "threads/fixed-point.h"
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
@@ -59,12 +60,15 @@ static unsigned thread_ticks;   /* # of timer ticks since last yield. */
    Controlled by kernel command-line option "-o mlfqs". */
 bool thread_mlfqs;
 
+struct real load_average = { 0 };
+
 static void kernel_thread (thread_func *, void *aux);
 
 static void idle (void *aux UNUSED);
 static struct thread *running_thread (void);
 static struct thread *next_thread_to_run (void);
 static void init_thread (struct thread *, const char *name, int priority);
+static void ad (struct thread *, const char *name, int priority);
 static bool is_thread (struct thread *) UNUSED;
 static void *alloc_frame (struct thread *, size_t size);
 static void schedule (void);
@@ -247,7 +251,6 @@ thread_unblock (struct thread *t)
   enum intr_level old_level;
 
   ASSERT (is_thread (t));
-
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
   list_insert_ordered (&ready_list, &t->elem
@@ -346,15 +349,47 @@ thread_foreach (thread_action_func *func, void *aux)
     }
 }
 
+int max (int a, int b)
+{
+  return a > b ? a : b;
+}
+
+// bool in_donation_state (int8_t priority)
+// {
+//   return priority != -1;
+// }
+
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void
 thread_set_priority (int new_priority)
 {
-  thread_current ()->priority = new_priority;
-  int old_level = intr_disable ();
+  struct list_elem *current_lock;
+  struct list acquired_locks = thread_current ()->donation_info.acquired_locks;
+  //printf("Loop from set 1\n");
+  for (current_lock = list_begin (&thread_current ()->donation_info.acquired_locks); current_lock != NULL && current_lock != list_end (&thread_current ()->donation_info.acquired_locks);
+       current_lock = list_next (current_lock))
+    {
+      //printf("Loop from set 2\n");
+      struct lock *current_acquired_lock = list_entry (current_lock, struct lock, elem);
+      current_acquired_lock->original_thread_priority = new_priority;
+    }
+
+  //int priority_before_donation = thread_current ()->donation_info.priority_before_donation;
+  //printf("FLAF TO BE CHECKED: %d\n", thread_current ()->donation_info.donation_occured);
+  if (!thread_current ()->donation_info.donation_occured)
+  {
+	   //printf("SET PIORITY 1: %d %d", thread_current ()->priority, new_priority);
+	   thread_current ()->priority = new_priority;
+  }
+  else
+  {
+    //printf("SET PIORITY 2: %d %d", thread_current ()->priority, new_priority);
+    thread_current ()->priority = max(thread_current ()->priority, new_priority);
+  }
   thread_yield ();
-  intr_set_level (old_level);
 }
+
+
 
 /* Returns the current thread's priority. */
 int
@@ -367,31 +402,28 @@ thread_get_priority (void)
 void
 thread_set_nice (int nice UNUSED)
 {
-  /* Not yet implemented. */
+  thread_current ()->nice = nice;
 }
 
 /* Returns the current thread's nice value. */
 int
 thread_get_nice (void)
 {
-  /* Not yet implemented. */
-  return 0;
+  return thread_current ()->nice;
 }
 
 /* Returns 100 times the system load average. */
 int
 thread_get_load_avg (void)
 {
-  /* Not yet implemented. */
-  return 0;
+  return nearest_rounding (multiply_integer (load_average, 100));
 }
 
 /* Returns 100 times the current thread's recent_cpu value. */
 int
 thread_get_recent_cpu (void)
 {
-  /* Not yet implemented. */
-  return 0;
+  return nearest_rounding (multiply_integer (thread_current ()->recent_cpu, 100));
 }
 
 /* Idle thread.  Executes when no other thread is ready to run.
@@ -472,12 +504,18 @@ init_thread (struct thread *t, const char *name, int priority)
   ASSERT (t != NULL);
   ASSERT (PRI_MIN <= priority && priority <= PRI_MAX);
   ASSERT (name != NULL);
-
   memset (t, 0, sizeof *t);
   t->status = THREAD_BLOCKED;
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
+  // /* Allocating memory for donation_thread_info */
+  //  t->donation_info = (struct thread_donation_info*) malloc (sizeof(struct thread_donation_info));
+  // /* Initializing the value of priority after donation attribute*/
+  t->donation_info.donation_occured = false;
+  t->donation_info.blocking_lock = NULL;
+  list_init (&t->donation_info.acquired_locks);
+  t->nice = 0;
   t->magic = THREAD_MAGIC;
   list_push_back (&all_list, &t->allelem);
 }
@@ -512,6 +550,7 @@ next_thread_to_run (void)
 /* Returns the maximum priority thread in the ready list */
 struct thread* highest_priority_thread ()
 {
+  list_sort (&ready_list, &priority_comparator, NULL);
   struct list_elem *max_element = list_pop_front (&ready_list);
   struct thread* highest_pri_thread = list_entry (max_element,
                                            struct thread, elem);
@@ -605,13 +644,81 @@ allocate_tid (void)
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
 
+int existing_threads (void)
+{
+  int number_of_threads = list_size(&ready_list);
+  if (thread_current () == idle_thread)
+    return number_of_threads;
+  return number_of_threads + 1;
+}
+
+
+
+void update_recent_cpu (void)
+{
+  thread_current ()->recent_cpu = add_fixed_point (multiply_fixed_point (
+      divide_fixed_point (multiply_integer (load_average, 2),
+      add_integer (multiply_integer (load_average, 2) , 1)),
+      thread_current ()->recent_cpu), fixed_point (thread_current ()->nice));
+
+  struct list_elem *e;
+  for (e = list_begin (&ready_list); e != list_end (&ready_list);
+       e = list_next (e))
+  {
+   struct thread *current_thread = list_entry (e, struct thread, elem);
+   current_thread->recent_cpu = add_integer (multiply_fixed_point (
+        divide_fixed_point (multiply_integer (load_average, 2),
+        add_integer (multiply_integer (load_average, 2) , 1)), current_thread->recent_cpu), current_thread->nice);
+  }
+}
+void increment_recent_cpu (void)
+{
+  increment_fixed_point (thread_current ()->recent_cpu);
+}
+void update_load_avg (void)
+{
+  load_average = add_fixed_point (multiply_fixed_point (
+    divide_fixed_point (fixed_point (59), fixed_point (60)), load_average)
+      , multiply_fixed_point (divide_fixed_point (fixed_point (1), fixed_point (60)), fixed_point (existing_threads ())));
+}
+void update_priority (void)
+{
+  int  decrement = zero_rounding (subtract_integer (
+    divide_fixed_point (thread_current ()->recent_cpu, fixed_point (4)), thread_current ()->nice * 2));
+
+  int tmp_priority = PRI_MAX - decrement;
+  if (tmp_priority < 0)
+    thread_current ()->priority = PRI_MIN;
+  else if (tmp_priority > PRI_MAX)
+    thread_current ()->priority = PRI_MAX;
+  else
+    thread_current ()->priority = tmp_priority;
+
+  struct list_elem *e;
+  for (e = list_begin (&ready_list); e != list_end (&ready_list);
+    e = list_next (e))
+  {
+    struct thread *current_thread = list_entry (e, struct thread, elem);
+    int  decrement = zero_rounding (subtract_integer (
+      divide_fixed_point (current_thread->recent_cpu, fixed_point (4)), current_thread->nice * 2));
+
+    int tmp_priority = PRI_MAX - decrement;
+    if (tmp_priority < 0)
+      current_thread->priority = PRI_MIN;
+    else if (tmp_priority > PRI_MAX)
+      current_thread->priority = PRI_MAX;
+    else
+      current_thread->priority = tmp_priority;
+  }
+}
+
 static bool
 priority_comparator (const struct list_elem *a,
                              const struct list_elem *b,
                              void *aux)
-  {
-    struct thread *thread_a, *thread_b;
-    thread_a = list_entry (a, struct thread, elem);
-    thread_b = list_entry (b, struct thread, elem);
-    return (thread_a->priority > thread_b->priority);
-  }
+{
+  struct thread *thread_a, *thread_b;
+  thread_a = list_entry (a, struct thread, elem);
+  thread_b = list_entry (b, struct thread, elem);
+  return (thread_a->priority > thread_b->priority);
+}

@@ -4,6 +4,8 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
+#include "synch.h"
+#include "fixed-point.h"
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -23,6 +25,16 @@ typedef int tid_t;
 #define PRI_MIN 0                       /* Lowest priority. */
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
+
+
+/*
+*/
+struct thread_donation_info
+{
+  struct lock *blocking_lock;
+  struct list acquired_locks;
+  bool donation_occured;
+};
 
 /* A kernel thread or user process.
 
@@ -92,15 +104,19 @@ struct thread
 
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
-
+    /* Recent CPU for this thread. */
+    struct real recent_cpu;
+    /* Nice value for this thread. */
+    int nice;
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
 #endif
-
+    struct thread_donation_info donation_info;
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
   };
+
 
   /* This structure is responsible for identifing the skeleton of
      the slept thread by a pre-specified number of ticks. */
@@ -122,6 +138,9 @@ struct thread
    If true, use multi-level feedback queue scheduler.
    Controlled by kernel command-line option "-o mlfqs". */
 extern bool thread_mlfqs;
+
+/* variable for Advanced BSD */
+extern struct real load_average;
 
 void thread_init (void);
 void thread_start (void);
@@ -154,5 +173,11 @@ void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
+// For BSD Scheduler
+void update_recent_cpu (void);
+void increment_recent_cpu (void);
+void update_load_avg (void);
+void update_priority (void);
+int existing_threads (void);
 
 #endif /* threads/thread.h */
