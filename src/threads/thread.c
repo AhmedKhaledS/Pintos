@@ -360,9 +360,9 @@ void
 thread_set_priority (int new_priority)
 {
   struct list_elem *current_lock;
-  struct list acquired_locks = thread_current ()->donation_info.acquired_locks;
+  struct list acquired_locks = thread_current ()->schedule_info.acquired_locks;
   //printf("Loop from set 1\n");
-  for (current_lock = list_begin (&thread_current ()->donation_info.acquired_locks); current_lock != NULL && current_lock != list_end (&thread_current ()->donation_info.acquired_locks);
+  for (current_lock = list_begin (&thread_current ()->schedule_info.acquired_locks); current_lock != NULL && current_lock != list_end (&thread_current ()->schedule_info.acquired_locks);
        current_lock = list_next (current_lock))
     {
       //printf("Loop from set 2\n");
@@ -370,9 +370,9 @@ thread_set_priority (int new_priority)
       current_acquired_lock->original_thread_priority = new_priority;
     }
 
-  //int priority_before_donation = thread_current ()->donation_info.priority_before_donation;
-  //printf("FLAF TO BE CHECKED: %d\n", thread_current ()->donation_info.donation_occured);
-  if (!thread_current ()->donation_info.donation_occured)
+  //int priority_before_donation = thread_current ()->schedule_info.priority_before_donation;
+  //printf("FLAF TO BE CHECKED: %d\n", thread_current ()->schedule_info.donation_occured);
+  if (!thread_current ()->schedule_info.donation_occured)
   {
 	   //printf("SET PIORITY 1: %d %d", thread_current ()->priority, new_priority);
 	   thread_current ()->priority = new_priority;
@@ -506,11 +506,11 @@ init_thread (struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
   // /* Allocating memory for donation_thread_info */
-  //  t->donation_info = (struct thread_donation_info*) malloc (sizeof(struct thread_donation_info));
+  //  t->schedule_info = (struct thread_schedule_info*) malloc (sizeof(struct thread_schedule_info));
   // /* Initializing the value of priority after donation attribute*/
-  t->donation_info.donation_occured = false;
-  t->donation_info.blocking_lock = NULL;
-  list_init (&t->donation_info.acquired_locks);
+  t->schedule_info.donation_occured = false;
+  t->schedule_info.blocking_lock = NULL;
+  list_init (&t->schedule_info.acquired_locks);
   t->recent_cpu.real_number = 0;
   t->nice = 0;
   t->magic = THREAD_MAGIC;

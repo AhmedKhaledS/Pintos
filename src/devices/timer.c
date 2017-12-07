@@ -103,11 +103,11 @@ timer_sleep (int64_t ticks)
     return;
   int64_t start = timer_ticks ();
   ASSERT (intr_get_level () == INTR_ON);
+  enum intr_level old_level = intr_disable ();
   struct sleeping_thread curr_thread_to_wait = INITIALIZE_S_THREAD(
           thread_current (), start + ticks);
   list_insert_ordered (&sleeping_threads, &curr_thread_to_wait.elem,
                         &comparator, NULL);
-  enum intr_level old_level = intr_disable ();
   thread_block ();
   intr_set_level (old_level);
 }

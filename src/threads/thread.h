@@ -29,7 +29,7 @@ typedef int tid_t;
 
 /*
 */
-struct thread_donation_info
+struct schedule_info
 {
   struct lock *blocking_lock;
   struct list acquired_locks;
@@ -112,7 +112,7 @@ struct thread
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
 #endif
-    struct thread_donation_info donation_info;
+    struct schedule_info schedule_info;
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
   };

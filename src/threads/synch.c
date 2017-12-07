@@ -204,34 +204,34 @@ lock_init (struct lock *lock)
 /**/
 void nested_donation2 (struct thread *propagated_thread)
 {
-  while (propagated_thread->donation_info.blocking_lock != NULL)
+  while (propagated_thread->schedule_info.blocking_lock != NULL)
   {
     //printf("DONATION OCCURING");
     if (propagated_thread->priority <= propagated_thread->
-      donation_info.blocking_lock->holder->priority)
+      schedule_info.blocking_lock->holder->priority)
       break;
       //printf("DONATION OCCURING");
-      propagated_thread->donation_info.blocking_lock->holder->priority =
+      propagated_thread->schedule_info.blocking_lock->holder->priority =
       propagated_thread->priority;
-      propagated_thread->donation_info.blocking_lock->holder->
-      donation_info.donation_occured = true;
-      propagated_thread = propagated_thread->donation_info.blocking_lock->holder;
+      propagated_thread->schedule_info.blocking_lock->holder->
+      schedule_info.donation_occured = true;
+      propagated_thread = propagated_thread->schedule_info.blocking_lock->holder;
     }
   }
 /**/
 void nested_donation (struct thread *propagated_thread)
 {
-  if (propagated_thread->donation_info.blocking_lock == NULL)
+  if (propagated_thread->schedule_info.blocking_lock == NULL)
      return;
 
   if (propagated_thread->priority <= propagated_thread->
-                donation_info.blocking_lock->holder->priority)
+                schedule_info.blocking_lock->holder->priority)
     return;
-  propagated_thread->donation_info.blocking_lock->holder->priority =
+  propagated_thread->schedule_info.blocking_lock->holder->priority =
                 propagated_thread->priority;
-  propagated_thread->donation_info.blocking_lock->holder->
-               donation_info.donation_occured = true;
-  nested_donation (propagated_thread->donation_info.blocking_lock->holder);
+  propagated_thread->schedule_info.blocking_lock->holder->
+               schedule_info.donation_occured = true;
+  nested_donation (propagated_thread->schedule_info.blocking_lock->holder);
 }
 
 
@@ -253,24 +253,23 @@ lock_acquire (struct lock *lock)
 
   if (!thread_mlfqs && lock->holder != NULL)
   {
-    thread_current ()->donation_info.blocking_lock = lock;
+    thread_current ()->schedule_info.blocking_lock = lock;
     nested_donation (thread_current ());
   }
 
   sema_down (&lock->semaphore);
 
-  if (list_empty (&thread_current ()->donation_info.acquired_locks))
+  if (list_empty (&thread_current ()->schedule_info.acquired_locks))
             lock->original_thread_priority = thread_current ()->priority;
   else
   {
-    lock->original_thread_priority = list_entry (list_begin (&thread_current ()->donation_info
+    lock->original_thread_priority = list_entry (list_begin (&thread_current ()->schedule_info
             .acquired_locks), struct lock, elem)->original_thread_priority;
   }
 
   lock->holder = thread_current ();
-  list_push_back (&thread_current ()->donation_info.acquired_locks, &lock->elem);
-  thread_current ()->donation_info.blocking_lock = NULL;
-
+  list_push_back (&thread_current ()->schedule_info.acquired_locks, &lock->elem);
+  thread_current ()->schedule_info.blocking_lock = NULL;
 
   intr_set_level (old_level);
 }
@@ -309,16 +308,16 @@ lock_release (struct lock *lock)
 
   lock->holder = NULL;
   int maximum_priority = lock->original_thread_priority;
-  thread_current ()->donation_info.donation_occured = false;
+  thread_current ()->schedule_info.donation_occured = false;
   list_remove (&lock->elem);
   //printf("LOOP 1....\n");
 
-  struct list acquired_locks = thread_current ()->donation_info.acquired_locks;
+  struct list acquired_locks = thread_current ()->schedule_info.acquired_locks;
   if (!thread_mlfqs)
   {
     //printf("ENTERED LOOP\n");
     struct list_elem *current_lock;
-    struct list *acquired_locks = &thread_current ()->donation_info.acquired_locks;
+    struct list *acquired_locks = &thread_current ()->schedule_info.acquired_locks;
     //printf("List Size %d\n", list_size(&acquired_locks));
     for (current_lock = list_begin (acquired_locks); current_lock != NULL && current_lock != list_end (acquired_locks);
          current_lock = list_next (current_lock))
@@ -336,7 +335,7 @@ lock_release (struct lock *lock)
           }
       }
       if (maximum_priority != lock->original_thread_priority)
-        thread_current ()->donation_info.donation_occured = true;
+        thread_current ()->schedule_info.donation_occured = true;
 
       thread_current ()->priority = maximum_priority;
   }
@@ -466,7 +465,7 @@ priority_comparator (const struct list_elem *a,
     // return true;
   // else if (thread_a->priority == thread_b->priority)
   // {
-  //   if (thread_a->donation_info.blocking_lock == NULL)
+  //   if (thread_a->schedule_info.blocking_lock == NULL)
   //     return true;
   // }
   // return false;
