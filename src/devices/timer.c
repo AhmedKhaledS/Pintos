@@ -188,19 +188,21 @@ timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
   thread_tick ();
-  unblock_sleeping_threads ();
-  if (!thread_mlfqs)
-    return;
-  increment_recent_cpu ();
-  if (timer_ticks () % TIMER_FREQ == 0)
+  if (thread_mlfqs)
   {
-    //printf ("Load average is: %d\n", load_average.real_number);
-    update_load_avg ();
-    update_recent_cpu ();
-// load_avg = (59/60)*load_avg + (1/60)*ready_threads
+    increment_recent_cpu ();
+    if (timer_ticks () % TIMER_FREQ == 0)
+    {
+      //printf ("Load average is: %d\n", load_average.real_number);
+      update_load_avg ();
+      update_recent_cpu ();
+    }
+    if (timer_ticks () % PRIORITY_INTERVAL == 0)
+    {
+      update_priority ();
+    }
   }
-  if (timer_ticks () % 4 == 0)
-    update_priority ();
+  unblock_sleeping_threads ();
 }
 
 /* This function unblocks all threads in sleeping list. */
@@ -217,15 +219,11 @@ unblock_sleeping_threads()
           current_extracted = list_entry (list_pop_front (
             &sleeping_threads), struct sleeping_thread, elem);
           thread_unblock (current_extracted->s_thread);
+          intr_yield_on_return ();
         }
       else
         break;
     }
-  /*while (!list_empty (&sleeping_threads))
-    {
-       thread_unblock (list_entry (list_pop_front (&sleeping_threads),
-                                  struct thread, elem));
-    }*/
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer

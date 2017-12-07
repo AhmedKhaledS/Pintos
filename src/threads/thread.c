@@ -354,10 +354,6 @@ int max (int a, int b)
   return a > b ? a : b;
 }
 
-// bool in_donation_state (int8_t priority)
-// {
-//   return priority != -1;
-// }
 
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void
@@ -515,6 +511,7 @@ init_thread (struct thread *t, const char *name, int priority)
   t->donation_info.donation_occured = false;
   t->donation_info.blocking_lock = NULL;
   list_init (&t->donation_info.acquired_locks);
+  t->recent_cpu.real_number = 0;
   t->nice = 0;
   t->magic = THREAD_MAGIC;
   list_push_back (&all_list, &t->allelem);
@@ -644,7 +641,7 @@ allocate_tid (void)
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
 
-int existing_threads (void)
+int ready_threads (void)
 {
   int number_of_threads = list_size(&ready_list);
   if (thread_current () == idle_thread)
@@ -656,60 +653,73 @@ int existing_threads (void)
 
 void update_recent_cpu (void)
 {
-  thread_current ()->recent_cpu = add_fixed_point (multiply_fixed_point (
-      divide_fixed_point (multiply_integer (load_average, 2),
-      add_integer (multiply_integer (load_average, 2) , 1)),
-      thread_current ()->recent_cpu), fixed_point (thread_current ()->nice));
-
-  struct list_elem *e;
-  for (e = list_begin (&ready_list); e != list_end (&ready_list);
-       e = list_next (e))
+  // recent_cpu = (2*load_avg)/(2*load_avg + 1) * recent_cpu + nice.
+  struct list_elem *current_elem;
+  for (current_elem = list_begin (&all_list); current_elem != list_end (&all_list);
+       current_elem = list_next (current_elem))
   {
-   struct thread *current_thread = list_entry (e, struct thread, elem);
-   current_thread->recent_cpu = add_integer (multiply_fixed_point (
-        divide_fixed_point (multiply_integer (load_average, 2),
-        add_integer (multiply_integer (load_average, 2) , 1)), current_thread->recent_cpu), current_thread->nice);
+    struct thread *current_thread = list_entry (current_elem, struct thread, allelem);
+    current_thread->recent_cpu = add_integer (divide_fixed_point (
+        multiply_fixed_point (multiply_integer (load_average, 2),
+         current_thread->recent_cpu),  add_integer (multiply_integer (load_average, 2), 1)),
+          current_thread->nice);
   }
 }
+
 void increment_recent_cpu (void)
 {
-  increment_fixed_point (thread_current ()->recent_cpu);
+  if (thread_current () != idle_thread)
+    thread_current ()->recent_cpu = increment_fixed_point (thread_current ()->recent_cpu);
 }
+
 void update_load_avg (void)
 {
-  load_average = add_fixed_point (multiply_fixed_point (
-    divide_fixed_point (fixed_point (59), fixed_point (60)), load_average)
-      , multiply_fixed_point (divide_fixed_point (fixed_point (1), fixed_point (60)), fixed_point (existing_threads ())));
+  // load_avg = (59/60)*load_avg + (1/60)*ready_threads
+  //printf ("Current number of ready threads = %d\n", ready_threads ());
+  load_average = add_fixed_point (divide_integer (multiply_integer (load_average, 59), 60)
+    ,divide_integer (fixed_point (ready_threads ()), 60));
 }
+
 void update_priority (void)
 {
-  int  decrement = zero_rounding (subtract_integer (
-    divide_fixed_point (thread_current ()->recent_cpu, fixed_point (4)), thread_current ()->nice * 2));
+  // priority = PRI_MAX - ((recent_cpu / 4) + (nice * 2))
+  if (thread_current () != idle_thread)
+  {
+    struct real decrement = add_integer (
+      divide_fixed_point (thread_current ()->recent_cpu, fixed_point (4)),
+        thread_current ()->nice * 2);
 
-  int tmp_priority = PRI_MAX - decrement;
-  if (tmp_priority < 0)
-    thread_current ()->priority = PRI_MIN;
-  else if (tmp_priority > PRI_MAX)
-    thread_current ()->priority = PRI_MAX;
-  else
-    thread_current ()->priority = tmp_priority;
+      int tmp_priority = zero_rounding (subtract_fixed_point (fixed_point (PRI_MAX), decrement));
+      //printf ("Current priotiy in UPDATE = %d\n", tmp_priority);
+
+      if (tmp_priority < PRI_MIN)
+        thread_current ()->priority = PRI_MIN;
+      else if (tmp_priority > PRI_MAX)
+        thread_current ()->priority = PRI_MAX;
+      else
+        thread_current ()->priority = tmp_priority;
+  }
 
   struct list_elem *e;
-  for (e = list_begin (&ready_list); e != list_end (&ready_list);
+  for (e = list_begin (&all_list); e != list_end (&all_list);
     e = list_next (e))
   {
-    struct thread *current_thread = list_entry (e, struct thread, elem);
-    int  decrement = zero_rounding (subtract_integer (
-      divide_fixed_point (current_thread->recent_cpu, fixed_point (4)), current_thread->nice * 2));
+    struct thread *current_thread = list_entry (e, struct thread, allelem);
+    if (current_thread == idle_thread)
+      continue;
+    struct real decrement = add_integer (
+      divide_fixed_point (current_thread->recent_cpu, fixed_point (4)),
+      current_thread->nice * 2);
 
-    int tmp_priority = PRI_MAX - decrement;
-    if (tmp_priority < 0)
+    int tmp_priority = zero_rounding (subtract_fixed_point (fixed_point (PRI_MAX), decrement));
+    if (tmp_priority < PRI_MIN)
       current_thread->priority = PRI_MIN;
     else if (tmp_priority > PRI_MAX)
       current_thread->priority = PRI_MAX;
     else
       current_thread->priority = tmp_priority;
   }
+    intr_yield_on_return ();
 }
 
 static bool

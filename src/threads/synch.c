@@ -259,18 +259,17 @@ lock_acquire (struct lock *lock)
 
   sema_down (&lock->semaphore);
 
-    if (list_empty (&thread_current ()->donation_info.acquired_locks))
-              lock->original_thread_priority = thread_current ()->priority;
-    else
-    {
-      //printf("First attempt to aquire .. ADDED\n");
-      lock->original_thread_priority = list_entry (list_begin (&thread_current ()->donation_info
-              .acquired_locks), struct lock, elem)->original_thread_priority;
-    }
+  if (list_empty (&thread_current ()->donation_info.acquired_locks))
+            lock->original_thread_priority = thread_current ()->priority;
+  else
+  {
+    lock->original_thread_priority = list_entry (list_begin (&thread_current ()->donation_info
+            .acquired_locks), struct lock, elem)->original_thread_priority;
+  }
 
-    lock->holder = thread_current ();
-    list_push_back (&thread_current ()->donation_info.acquired_locks, &lock->elem);
-    thread_current ()->donation_info.blocking_lock = NULL;
+  lock->holder = thread_current ();
+  list_push_back (&thread_current ()->donation_info.acquired_locks, &lock->elem);
+  thread_current ()->donation_info.blocking_lock = NULL;
 
 
   intr_set_level (old_level);

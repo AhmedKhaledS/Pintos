@@ -17,7 +17,7 @@ int zero_rounding (struct real real_num)
 
 int nearest_rounding (struct real real_num)
 {
-  if (real_num.real_number >= 0)
+  if (real_num.real_number > 0)
     return (real_num.real_number + F / 2) / F;
   return (real_num.real_number - F / 2) / F;
 }
@@ -30,8 +30,7 @@ struct real add_fixed_point (struct real x, struct real y)
 
 struct real increment_fixed_point (struct real x)
 {
-  struct real real_converted_number = { x.real_number + 1 };
-  return real_converted_number;
+  return add_integer (x, 1);
 }
 
 struct real subtract_fixed_point (struct real x, struct real y)
