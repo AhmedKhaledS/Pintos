@@ -123,20 +123,16 @@ sema_up (struct semaphore *sema)
   enum intr_level old_level;
 
   ASSERT (sema != NULL);
-  // printf("size of waiters-list = %d ----- priority = %d\n",
-  //   (int)list_size(&sema->waiters), (int)list_entry(list_max (&sema->waiters, &priority_comparator, NULL), struct thread, elem)->priority);
-  //printf("number of cond_waiters in ready list = %d\n", list_size (&sema->waiters));
-
   old_level = intr_disable ();
 
-  if (!list_empty (&sema->waiters)) {
-    list_sort(&sema->waiters, &priority_comparator, NULL);
-    thread_unblock (list_entry (list_pop_front (&sema->waiters),
-                                struct thread, elem));
-  }
+  if (!list_empty (&sema->waiters))
+    {
+      list_sort(&sema->waiters, &priority_comparator, NULL);
+      thread_unblock (list_entry (list_pop_front (&sema->waiters),
+                                  struct thread, elem));
+    }
   sema->value++;
   intr_set_level (old_level);
-
   thread_yield ();
 }
 
@@ -201,36 +197,22 @@ lock_init (struct lock *lock)
   sema_init (&lock->semaphore, 1);
 }
 
-/**/
-void nested_donation2 (struct thread *propagated_thread)
-{
-  while (propagated_thread->schedule_info.blocking_lock != NULL)
-  {
-    //printf("DONATION OCCURING");
-    if (propagated_thread->priority <= propagated_thread->
-      schedule_info.blocking_lock->holder->priority)
-      break;
-      //printf("DONATION OCCURING");
-      propagated_thread->schedule_info.blocking_lock->holder->priority =
-      propagated_thread->priority;
-      propagated_thread->schedule_info.blocking_lock->holder->
-      schedule_info.donation_occured = true;
-      propagated_thread = propagated_thread->schedule_info.blocking_lock->holder;
-    }
-  }
-/**/
+/*Performs nested donation for the given thread recursively. It donates
+the priority to the blocking_lock holder and allows that holder to
+recursively donate to his blocking_lock holder. */
 void nested_donation (struct thread *propagated_thread)
 {
   if (propagated_thread->schedule_info.blocking_lock == NULL)
      return;
 
   if (propagated_thread->priority <= propagated_thread->
-                schedule_info.blocking_lock->holder->priority)
+      schedule_info.blocking_lock->holder->priority)
     return;
+
   propagated_thread->schedule_info.blocking_lock->holder->priority =
-                propagated_thread->priority;
+      propagated_thread->priority;
   propagated_thread->schedule_info.blocking_lock->holder->
-               schedule_info.donation_occured = true;
+      schedule_info.donation_occured = true;
   nested_donation (propagated_thread->schedule_info.blocking_lock->holder);
 }
 
@@ -252,23 +234,23 @@ lock_acquire (struct lock *lock)
   enum intr_level old_level = intr_disable ();
 
   if (!thread_mlfqs && lock->holder != NULL)
-  {
-    thread_current ()->schedule_info.blocking_lock = lock;
-    nested_donation (thread_current ());
-  }
+    {
+      thread_current ()->schedule_info.blocking_lock = lock;
+      nested_donation (thread_current ());
+    }
 
   sema_down (&lock->semaphore);
 
   if (list_empty (&thread_current ()->schedule_info.acquired_locks))
-            lock->original_thread_priority = thread_current ()->priority;
+    lock->original_thread_priority = thread_current ()->priority;
   else
-  {
-    lock->original_thread_priority = list_entry (list_begin (&thread_current ()->schedule_info
-            .acquired_locks), struct lock, elem)->original_thread_priority;
-  }
+    lock->original_thread_priority = list_entry (list_begin (
+      &thread_current ()->schedule_info.acquired_locks), struct lock, elem)
+      ->original_thread_priority;
 
   lock->holder = thread_current ();
-  list_push_back (&thread_current ()->schedule_info.acquired_locks, &lock->elem);
+  list_push_back (&thread_current ()->schedule_info.acquired_locks,
+      &lock->elem);
   thread_current ()->schedule_info.blocking_lock = NULL;
 
   intr_set_level (old_level);
@@ -294,6 +276,32 @@ lock_try_acquire (struct lock *lock)
   return success;
 }
 
+/*Searches for the maximum priority in all waiters on all acquired locks.
+Then returns the maximum in comparison to the given lock's priority.*/
+int max_priority_on_release (struct lock *lock)
+{
+  int maximum_priority = lock->original_thread_priority;
+  struct list_elem *current_lock;
+  struct list *acquired_locks = &thread_current ()->schedule_info.acquired_locks;
+  for (current_lock = list_begin (acquired_locks); current_lock != list_end (acquired_locks);
+      current_lock = list_next (current_lock))
+    {
+      struct lock *current_acquired_lock = list_entry (current_lock, struct lock, elem);
+      struct list *waiters = &current_acquired_lock->semaphore.waiters;
+      struct list_elem *waiting_thread;
+      for (waiting_thread = list_begin (waiters); waiting_thread != list_end (waiters);
+          waiting_thread = list_next (waiting_thread))
+        {
+          struct thread *current_waiting_thread = list_entry (waiting_thread,
+              struct thread, elem);
+          maximum_priority = max (maximum_priority, current_waiting_thread->priority);
+        }
+    }
+    if (maximum_priority != lock->original_thread_priority)
+      thread_current ()->schedule_info.donation_occured = true;
+    return maximum_priority;
+}
+
 /* Releases LOCK, which must be owned by the current thread.
 
    An interrupt handler cannot acquire a lock, so it does not
@@ -307,38 +315,11 @@ lock_release (struct lock *lock)
   enum intr_level old_level = intr_disable ();
 
   lock->holder = NULL;
-  int maximum_priority = lock->original_thread_priority;
   thread_current ()->schedule_info.donation_occured = false;
   list_remove (&lock->elem);
-  //printf("LOOP 1....\n");
 
-  struct list acquired_locks = thread_current ()->schedule_info.acquired_locks;
   if (!thread_mlfqs)
-  {
-    //printf("ENTERED LOOP\n");
-    struct list_elem *current_lock;
-    struct list *acquired_locks = &thread_current ()->schedule_info.acquired_locks;
-    //printf("List Size %d\n", list_size(&acquired_locks));
-    for (current_lock = list_begin (acquired_locks); current_lock != NULL && current_lock != list_end (acquired_locks);
-         current_lock = list_next (current_lock))
-      {
-        //printf("LOOP 2....\n");
-        struct lock *current_acquired_lock = list_entry (current_lock, struct lock, elem);
-        struct list *waiters = &current_acquired_lock->semaphore.waiters;
-        struct list_elem *waiting_thread;
-        for (waiting_thread = list_begin (waiters); waiting_thread != list_end (waiters);
-             waiting_thread = list_next (waiting_thread))
-          {
-            //printf("LOOP 3....\n");
-            struct thread *current_waiting_thread = list_entry (waiting_thread, struct thread, elem);
-            maximum_priority = max (maximum_priority, current_waiting_thread->priority);
-          }
-      }
-      if (maximum_priority != lock->original_thread_priority)
-        thread_current ()->schedule_info.donation_occured = true;
-
-      thread_current ()->priority = maximum_priority;
-  }
+    thread_current ()->priority = max_priority_on_release (lock);
 
   sema_up (&lock->semaphore);
   intr_set_level (old_level);
@@ -427,14 +408,10 @@ cond_signal (struct condition *cond, struct lock *lock UNUSED)
   ASSERT (lock != NULL);
   ASSERT (!intr_context ());
   ASSERT (lock_held_by_current_thread (lock));
-  //printf("number of cond_waiters in ready list = %d\n", list_size (&cond->waiters));
 
-  if (!list_empty (&cond->waiters)) {
-    list_sort(&cond->waiters, &cond_priority_comparator, NULL);
-    sema_up (&list_entry (list_pop_front (&cond->waiters),
-                          struct semaphore_elem, elem)->semaphore);
-  }
-
+  if (!list_empty (&cond->waiters))
+      sema_up (&list_entry (list_pop_front (&cond->waiters),
+          struct semaphore_elem, elem)->semaphore);
 }
 
 /* Wakes up all threads, if any, waiting on COND (protected by
@@ -453,28 +430,22 @@ cond_broadcast (struct condition *cond, struct lock *lock)
     cond_signal (cond, lock);
 }
 
+/*These Comparators all return true if the first element has higher
+priority than the second.*/
+
 static bool
-priority_comparator (const struct list_elem *a,
-                             const struct list_elem *b,
-                             void *aux)
+priority_comparator (const struct list_elem *a, const struct list_elem *b,
+    void *aux)
 {
   struct thread *thread_a, *thread_b;
   thread_a = list_entry (a, struct thread, elem);
   thread_b = list_entry (b, struct thread, elem);
   return (thread_a->priority > thread_b->priority);
-    // return true;
-  // else if (thread_a->priority == thread_b->priority)
-  // {
-  //   if (thread_a->schedule_info.blocking_lock == NULL)
-  //     return true;
-  // }
-  // return false;
 }
 
 static bool
-cond_priority_comparator (const struct list_elem *a,
-                             const struct list_elem *b,
-                             void *aux)
+cond_priority_comparator (const struct list_elem *a, const struct list_elem *b,
+    void *aux)
 {
   struct semaphore_elem *sem_a, *sem_b;
   sem_a = list_entry (a, struct semaphore_elem, elem);
@@ -483,9 +454,8 @@ cond_priority_comparator (const struct list_elem *a,
 }
 
 static bool
-lock_priority_comparator (const struct list_elem *a,
-                             const struct list_elem *b,
-                             void *aux)
+lock_priority_comparator (const struct list_elem *a, const struct list_elem *b,
+    void *aux)
 {
   struct lock *lock_a, *lock_b;
   lock_a = list_entry (a, struct lock, elem);

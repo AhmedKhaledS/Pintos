@@ -1,43 +1,46 @@
-#ifndef THREADS_FIXED_POINT_H
-#define THREADS_FIXED_POINT_H
+#ifndef THREADS_FIXED_PT_H
+#define THREADS_FIXED_PT_H
 
-struct real
-{
-  int real_number;
-};
+/* Fixed-point new data type */
+typedef int fixed_pt;
 
-// #define REAL_NUMBER(REAL) REAL.real_number
-//
-// #define FIXED_POINT(INTEGER) { INTEGER * F }
-//
-// #define ZERO_ROUNDING(REAL)  REAL_NUMBER(REAL) / F
-//
-// #define NEAREST_ROUNDING(REAL)  #if REAL_NUMBER(REAL) >= 0
-//                                    (REAL_NUMBER(REAL) + F) / 2
-//                                 #endif
+/* Radix = (2 ^ 14) */
+#define F (int)(1 << 14)
 
+/* Casts the normal integer N to fixed point representation. */
+#define FIXED_PT(N) F * N
 
-struct real fixed_point (int integer);
+/*Floors the given fixed_pt number FP to int.*/
+#define ROUND_ZERO(FP) FP / F
 
-int zero_rounding (struct real real_num);
+/*Rounds the given fixed_pt FP to the neares int.*/
+#define ROUND_NEAREST(FP) FP > 0 ? (FP + F/2) / F \
+                                  : (FP - F/2) / F
+/*Adds two fixed_pt numbers, X and Y.*/
+#define FIXED_PT_ADD(X, Y) (X + Y)
 
-int nearest_rounding (struct real real_num);
+/*Adds fixed_pt number FP to  int N.*/
+#define INT_ADD(FP, N) (FP + N*F)
 
-struct real add_fixed_point (struct real x, struct real y);
+/*Subtracts int N from fixed_pt number FP.*/
+#define INT_SUB(FP, N) (FP - N*F)
 
-struct real increment_fixed_point (struct real x);
+/*Increments fixed_pt number X.*/
+#define FIXED_PT_INCREMENT(X) INT_ADD(X, 1)
 
-struct real subtract_fixed_point (struct real x, struct real y);
+/*Subtracts two fixed_pt numbers, Y from X.*/
+#define FIXED_PT_SUB(X, Y) (X - Y)
 
-struct real add_integer (struct real x, int n);
+/*Multiplies two fixed_pt numbers, X and Y.*/
+#define FIXED_PT_MUL(X, Y) ((int64_t)X * Y / F)
 
-struct real subtract_integer (struct real x, int n);
+/*Multiplies fixed_pt X by int N.*/
+#define INT_MUL(X, N) (X * N)
 
-struct real multiply_fixed_point (struct real x, struct real y);
+/*Divides two fixed_pt numbers, X by Y.*/
+#define FIXED_PT_DIV(X, Y) ((int64_t)X * F / Y)
 
-struct real multiply_integer (struct real x, int n);
+/*Divides fixed_pt number X by int N .*/
+#define INT_DIV(X, N) (X / N)
 
-struct real divide_fixed_point (struct real x, struct real y);
-
-struct real divide_integer (struct real x, int n);
 #endif

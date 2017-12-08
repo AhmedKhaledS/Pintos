@@ -27,12 +27,18 @@ typedef int tid_t;
 #define PRI_MAX 63                      /* Highest priority. */
 
 
-/*
+/* Extra information with every thread to identify its state in the
+   in the synchronization tree of locks, lock-holders and waiting threads.
+   Also specifies if that thread has its original priority or a donated
+   one.
 */
 struct schedule_info
 {
+  /* Pointer to the lock which causes this thread to sleep. */
   struct lock *blocking_lock;
+  /* List of acquired locks by the current thread. */
   struct list acquired_locks;
+  /* Indicates whether this thread has its original priority or not. */
   bool donation_occured;
 };
 
@@ -105,7 +111,7 @@ struct thread
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
     /* Recent CPU for this thread. */
-    struct real recent_cpu;
+    fixed_pt recent_cpu;
     /* Nice value for this thread. */
     int nice;
 #ifdef USERPROG
@@ -140,7 +146,7 @@ struct thread
 extern bool thread_mlfqs;
 
 /* variable for Advanced BSD */
-extern struct real load_average;
+extern fixed_pt load_average;
 
 void thread_init (void);
 void thread_start (void);

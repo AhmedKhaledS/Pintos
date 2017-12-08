@@ -189,23 +189,21 @@ timer_interrupt (struct intr_frame *args UNUSED)
   ticks++;
   thread_tick ();
   if (thread_mlfqs)
-  {
-    increment_recent_cpu ();
-    if (timer_ticks () % TIMER_FREQ == 0)
     {
-      //printf ("Load average is: %d\n", load_average.real_number);
-      update_load_avg ();
-      update_recent_cpu ();
+      increment_recent_cpu ();
+      if (timer_ticks () % TIMER_FREQ == 0)
+        {
+          update_load_avg ();
+          update_recent_cpu ();
+        }
+      if (timer_ticks () % PRIORITY_INTERVAL == 0)
+        update_priority ();
     }
-    if (timer_ticks () % PRIORITY_INTERVAL == 0)
-    {
-      update_priority ();
-    }
-  }
   unblock_sleeping_threads ();
 }
 
-/* This function unblocks all threads in sleeping list. */
+/* This function unblocks all threads in sleeping list whose wakeup time
+passed. */
 static void
 unblock_sleeping_threads()
 {
@@ -213,7 +211,7 @@ unblock_sleeping_threads()
     {
       int64_t start = timer_ticks ();
       struct sleeping_thread *current_extracted = list_entry (list_front (
-        &sleeping_threads), struct sleeping_thread, elem);
+          &sleeping_threads), struct sleeping_thread, elem);
       if (timer_ticks () >= current_extracted->wakeup_time)
         {
           current_extracted = list_entry (list_pop_front (
@@ -297,6 +295,7 @@ real_time_delay (int64_t num, int32_t denom)
   busy_wait (loops_per_tick * num / 1000 * TIMER_FREQ / (denom / 1000));
 }
 
+/*Comparator that returns true if thread A wakeup time is higher than thread B's.*/
 bool comparator (const struct list_elem *a,
                              const struct list_elem *b,
                              void *aux)
